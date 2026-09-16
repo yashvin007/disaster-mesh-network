@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Disaster-Resilient Emergency Network</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <div class="title">DISASTER-RESILIENT EMERGENCY COMMUNICATION NETWORK</div>
+          <div class="status-row">
+            <span class="live-dot"></span>
+            <span>LIVE</span>
+            <span class="status-label">Network Status</span>
+          </div>
+        </div>
+        <div class="connection-pill" id="connectionPill">
+          <span class="connection-dot"></span>
+          <span>Connecting...</span>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="primary-panel card">
+          <div class="panel-header">
+            <h2>Mesh Topology</h2>
+            <button id="demoBtn" class="secondary-btn">DEMO MODE</button>
+          </div>
+          <div id="networkMap" class="network-map"></div>
+        </section>
+
+        <aside class="side-panel">
+          <div class="card health-card">
+            <h3>Network Health</h3>
+            <div class="health-score" id="healthScore">100%</div>
+            <div class="stat-grid">
+              <div><span>Alive Nodes</span><strong id="aliveCount">0</strong></div>
+              <div><span>Degraded</span><strong id="degradedCount">0</strong></div>
+              <div><span>Down</span><strong id="downCount">0</strong></div>
+              <div><span>Active Links</span><strong id="activeLinks">0</strong></div>
+              <div><span>Connected</span><strong id="connectedStatus">YES</strong></div>
+            </div>
+          </div>
+
+          <div class="card controls-card">
+            <h3>Emergency Controls</h3>
+            <div class="controls-wrap">
+              <label for="nodeSelect">Node</label>
+              <select id="nodeSelect">
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+                <option value="E">E</option>
+                <option value="F">F</option>
+              </select>
+              <button id="failNodeBtn" class="primary-btn">Simulate Node Failure</button>
+              <button id="restoreNodeBtn" class="secondary-btn">Restore Node</button>
+              <button id="sendMessageBtn" class="primary-btn">Send Emergency Message</button>
+              <button id="failLinkBtn" class="secondary-btn">Simulate Link Failure</button>
+              <button id="resetNetBtn" class="ghost-btn">Reset Network</button>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <section class="lower-grid">
+        <div class="card message-panel">
+          <h3>Emergency Message</h3>
+          <form id="messageForm" class="message-form">
+            <div class="field-row">
+              <label>Sender
+                <select id="senderSelect">
+                  <option value="A">A</option>
+                  <option value="B">B</option>
+                  <option value="C">C</option>
+                  <option value="D">D</option>
+                  <option value="E">E</option>
+                  <option value="F">F</option>
+                </select>
+              </label>
+              <label>Destination
+                <select id="destinationSelect">
+                  <option value="F">F</option>
+                  <option value="A">A</option>
+                  <option value="B">B</option>
+                  <option value="C">C</option>
+                  <option value="D">D</option>
+                  <option value="E">E</option>
+                </select>
+              </label>
+              <label>Priority
+                <select id="prioritySelect">
+                  <option value="CRITICAL">CRITICAL</option>
+                  <option value="HIGH">HIGH</option>
+                  <option value="NORMAL">NORMAL</option>
+                  <option value="LOW">LOW</option>
+                </select>
+              </label>
+            </div>
+            <label>Message
+              <textarea id="messageInput" rows="3">SOS - Rescue team requires immediate assistance</textarea>
+            </label>
+            <button type="submit" class="primary-btn">Dispatch</button>
+          </form>
+          <div id="messageResult" class="message-result"></div>
+        </div>
+
+        <div class="card log-panel">
+          <h3>Event Log</h3>
+          <ul id="eventLog" class="event-log"></ul>
+        </div>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
