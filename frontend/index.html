@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Disaster-Resilient Emergency Communication Network</title>
-    <meta name="description" content="A self-healing emergency communication mesh network utilizing Dijkstra's algorithm for shortest-path routing, real-time node health monitoring, and disaster failover recovery." />
+    <meta name="description" content="A self-healing emergency communication mesh network simulating route-aware disaster messaging, rescue member patrol movement logs, node failover backtracking to last-saved GPS locations, and real-time topology health monitoring." />
     <meta property="og:title" content="Disaster-Resilient Emergency Communication Network" />
-    <meta property="og:description" content="A self-healing emergency communication mesh network utilizing Dijkstra's algorithm for shortest-path routing, real-time node health monitoring, and disaster failover recovery." />
+    <meta property="og:description" content="A self-healing emergency communication mesh network simulating route-aware disaster messaging, rescue member patrol movement logs, node failover backtracking to last-saved GPS locations, and real-time topology health monitoring." />
     <link rel="stylesheet" href="style.css" />
     <!-- Vis.js for Network Topology Visualization -->
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
@@ -61,6 +61,11 @@
           <div class="hud-val text-red" id="downCount">0</div>
           <div class="hud-sub">Isolated or Submerged</div>
         </div>
+        <div class="hud-item" id="hudBacktracking">
+          <div class="hud-label">LAST LOC TRACKER</div>
+          <div class="hud-val text-amber" id="backtrackCount">0 BEACONS</div>
+          <div class="hud-sub" id="backtrackHudSub">Backtrack Cache Ready</div>
+        </div>
         <div class="hud-item" id="hudActiveLinks">
           <div class="hud-label">ACTIVE RF LINKS</div>
           <div class="hud-val text-cyan" id="activeLinks">7 / 7</div>
@@ -87,6 +92,8 @@
               <span class="legend-chip"><span class="chip-dot degraded"></span> Degraded</span>
               <span class="legend-chip"><span class="chip-dot down"></span> Down</span>
               <span class="legend-chip"><span class="chip-line active"></span> Active Path</span>
+              <span class="legend-chip"><span class="chip-line backtrack"></span> Rescue Vector</span>
+              <button id="toggleBacktrackOverlayBtn" class="neo-btn-sm" title="Toggle Search Vectors on Map">Rescue Vectors</button>
               <button id="recenterBtn" class="neo-btn-sm" title="Re-center view">Recenter</button>
               <button id="resetNetBtn" class="neo-btn-sm danger" title="Reset to initial topology">Reset Mesh</button>
             </div>
@@ -115,11 +122,45 @@
                 <div><strong>Battery:</strong> <span id="inspBattery">92%</span></div>
                 <div><strong>Signal:</strong> <span id="inspSignal">94%</span></div>
                 <div><strong>Location:</strong> <span id="inspLocation">Zone A</span></div>
+                <div><strong>Coordinates:</strong> <span id="inspCoords">34.0522° N, 118.2437° W</span></div>
               </div>
+
+              <!-- LAST KNOWN LOCATION & BACKTRACKING TELEMETRY (DYNAMIC ON FAILURE) -->
+              <div class="insp-backtrack-box hidden" id="inspBacktrackBox">
+                <div class="backtrack-box-header">
+                  <span class="pulse-beacon-dot"></span>
+                  <strong>LAST SAVED LOCATION BEACON</strong>
+                </div>
+                <div class="backtrack-row">
+                  <span class="bt-label">Saved Sector:</span>
+                  <span class="bt-val" id="inspSavedLocation">--</span>
+                </div>
+                <div class="backtrack-row">
+                  <span class="bt-label">GPS Cutoff:</span>
+                  <span class="bt-val mono" id="inspSavedCoords">--</span>
+                </div>
+                <div class="backtrack-row">
+                  <span class="bt-label">Time of Loss:</span>
+                  <span class="bt-val" id="inspSavedTime">--</span>
+                </div>
+                <div class="backtrack-row">
+                  <span class="bt-label">Cutoff Stats:</span>
+                  <span class="bt-val" id="inspSavedStats">--</span>
+                </div>
+                <div class="backtrack-row highlight-row">
+                  <span class="bt-label">Rescue Vector:</span>
+                  <span class="bt-val highlight" id="inspSavedVector">--</span>
+                </div>
+                <button class="neo-btn-sm danger full-width" id="inspDispatchVectorBtn">
+                  🚨 Dispatch Search Unit to Last Location
+                </button>
+              </div>
+
               <div class="inspector-actions">
                 <button class="neo-btn-sm danger" id="inspFailBtn">Fail Node</button>
                 <button class="neo-btn-sm warning" id="inspDegradeBtn">Degrade</button>
                 <button class="neo-btn-sm success" id="inspRestoreBtn">Restore</button>
+                <button class="neo-btn-sm" id="inspViewTrailBtn">Trail</button>
               </div>
             </div>
           </div>
@@ -248,17 +289,43 @@
               </div>
             </div>
           </div>
+
+          <!-- EMERGENCY BACKTRACKING & LAST SAVED LOCATION TRACKER -->
+          <div class="card-neo backtracking-card" id="backtrackingCard">
+            <div class="card-header-neo">
+              <div class="header-left">
+                <span class="status-tag red" id="backtrackHeaderTag">FAILOVER BACKTRACKING</span>
+                <h3>Last Saved Location Tracker</h3>
+              </div>
+              <span class="badge-beacon standby" id="backtrackGlobalBadge">ALL UNITS ONLINE</span>
+            </div>
+            <p class="section-desc">
+              When a field node fails or is knocked offline, its last saved GPS coordinates, telemetry snapshot, and search vectors are preserved for search & rescue backtracking.
+            </p>
+            
+            <div class="backtrack-registry" id="backtrackRegistryList">
+              <div class="empty-backtrack-state" id="emptyBacktrackState">
+                <span class="empty-icon">🛰️</span>
+                <span>All 6 nodes actively heartbeating. Telemetry breadcrumb buffers synchronized.</span>
+              </div>
+            </div>
+
+            <div class="backtrack-footer-controls">
+              <button id="openTrailModalBtn" class="neo-btn-sm" title="View historical location trail">📍 Node GPS Trail</button>
+              <button id="openUpdatePosModalBtn" class="neo-btn-sm" title="Update node GPS position">📡 Update Field Coords</button>
+            </div>
+          </div>
         </aside>
       </main>
 
       <!-- LOWER DASHBOARD GRID: DISPATCH TERMINAL & EVENT LOGS -->
       <section class="lower-section">
-        <!-- EMERGENCY MESSAGE DISPATCH PANEL -->
+        <!-- SEAMLESS RESCUE SQUAD INTER-MEMBER RADIO DISPATCH -->
         <div class="card-neo dispatch-card">
           <div class="card-header-neo">
             <div class="header-left">
-              <span class="status-tag emerald">TACTICAL DISPATCH</span>
-              <h3>Emergency Communication Terminal</h3>
+              <span class="status-tag emerald">SEAMLESS INTER-MEMBER COMMS</span>
+              <h3>Tactical Rescue Squad Radio Dispatch</h3>
             </div>
             <span class="priority-pill critical" id="activePriorityBadge">CRITICAL PRIORITY</span>
           </div>
@@ -266,60 +333,61 @@
           <form id="messageForm" class="dispatch-form">
             <div class="form-grid">
               <div class="form-group">
-                <label for="senderSelect">Originating Node (Sender)</label>
+                <label for="senderSelect">Transmitting Rescue Member (Sender)</label>
                 <select id="senderSelect" class="neo-select">
-                  <option value="A" selected>Node A - Rescue Team 1</option>
-                  <option value="B">Node B - Ambulance Unit</option>
-                  <option value="C">Node C - Drone Relay</option>
-                  <option value="D">Node D - Rescue Team 2</option>
-                  <option value="E">Node E - Relief Camp</option>
-                  <option value="F">Node F - Command Center</option>
+                  <option value="A" selected>Rescue Team 1 (Squad Alpha)</option>
+                  <option value="B">Ambulance Unit (Medical Support)</option>
+                  <option value="C">Drone Relay (Aerial Recon Scout)</option>
+                  <option value="D">Rescue Team 2 (Squad Bravo)</option>
+                  <option value="E">Relief Camp (Logistics & Power)</option>
+                  <option value="F">Command Center (Incident Operations HQ)</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label for="destinationSelect">Target Destination Node</label>
+                <label for="destinationSelect">Target Team Member (Recipient)</label>
                 <select id="destinationSelect" class="neo-select">
-                  <option value="F" selected>Node F - Command Center</option>
-                  <option value="E">Node E - Relief Camp</option>
-                  <option value="D">Node D - Rescue Team 2</option>
-                  <option value="C">Node C - Drone Relay</option>
-                  <option value="B">Node B - Ambulance Unit</option>
-                  <option value="A">Node A - Rescue Team 1</option>
+                  <option value="F" selected>Command Center (Incident Operations HQ)</option>
+                  <option value="E">Relief Camp (Logistics & Power)</option>
+                  <option value="D">Rescue Team 2 (Squad Bravo)</option>
+                  <option value="C">Drone Relay (Aerial Recon Scout)</option>
+                  <option value="B">Ambulance Unit (Medical Support)</option>
+                  <option value="A">Rescue Team 1 (Squad Alpha)</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label for="prioritySelect">Emergency Priority Level</label>
+                <label for="prioritySelect">Radio Priority Level</label>
                 <select id="prioritySelect" class="neo-select">
-                  <option value="CRITICAL" selected>🚨 CRITICAL (Life-Safety SOS)</option>
-                  <option value="HIGH">⚠️ HIGH (Urgent Supplies / Evac)</option>
-                  <option value="NORMAL">ℹ️ NORMAL (Telemetry / Status Check)</option>
-                  <option value="LOW">📡 LOW (Routine Sync)</option>
+                  <option value="CRITICAL" selected>🚨 CRITICAL (Emergency Squad Intercom)</option>
+                  <option value="HIGH">⚠️ HIGH (Urgent Route Clearance / Medical)</option>
+                  <option value="NORMAL">ℹ️ NORMAL (Squad Check-In / Waypoint Ping)</option>
+                  <option value="LOW">📡 LOW (Routine Mesh Sync)</option>
                 </select>
               </div>
             </div>
 
-            <!-- Quick SOS Presets -->
+            <!-- Inter-Member Coordination Presets -->
             <div class="preset-chips">
-              <span class="preset-label">Quick Presets:</span>
-              <button type="button" class="preset-chip" data-msg="SOS - Structural collapse at Sector 4. Immediate extraction team required.">Building Collapse</button>
-              <button type="button" class="preset-chip" data-msg="CRITICAL - Medical trauma patient in shock; dispatch urgent air ambulance.">Medical Trauma</button>
-              <button type="button" class="preset-chip" data-msg="SURVEY - Aerial drone confirmed 12 stranded civilians on high ground.">Survivor Cluster</button>
-              <button type="button" class="preset-chip" data-msg="STATUS - Clean water and satellite power battery depleted to 18%.">Supply Shortage</button>
+              <span class="preset-label">Inter-Team Presets:</span>
+              <button type="button" class="preset-chip" data-msg="SQUAD CHECK-IN - Rescue Team 1 arrived at Sector 4 North Ridge waypoint. RF link steady.">Squad Check-In</button>
+              <button type="button" class="preset-chip" data-msg="MED SQUAD SYNC - Ambulance Unit established forward medical staging tent at Sector 2 road junction.">Medical Staging</button>
+              <button type="button" class="preset-chip" data-msg="DRONE RECON - Aerial drone completed canyon wash scan; pass is clear for Squad 2 transit.">Drone Recon</button>
+              <button type="button" class="preset-chip" data-msg="LOGISTICS SYNC - Relief Camp has spare radio battery packs and solar repeaters ready for field squads.">Logistics & Power</button>
+              <button type="button" class="preset-chip" data-msg="FIELD HAZARD - Rockfall blocked western access trail. Squad 2 rerouting via Ridge B.">Field Hazard Warning</button>
             </div>
 
             <div class="form-group">
-              <label for="messageInput">Emergency Packet Payload</label>
-              <textarea id="messageInput" rows="2" class="neo-textarea" placeholder="Enter emergency message payload...">SOS - Flash flood surge detected at Sector A bridge. Rescue team requires immediate evacuation support.</textarea>
+              <label for="messageInput">Inter-Member Radio Transmission</label>
+              <textarea id="messageInput" rows="2" class="neo-textarea" placeholder="Enter tactical squad message...">SQUAD CHECK-IN - Rescue Team 1 stationed at Sector 4 North Ridge. Maintaining mesh repeater relay with Command HQ.</textarea>
             </div>
 
             <div class="dispatch-footer">
               <div class="dispatch-result-box" id="messageResult">
-                <span class="ready-text">⚡ Terminal online. Ready to route packet via Dijkstra algorithm.</span>
+                <span class="ready-text">⚡ Mesh radio online. Ready to route packet via Dijkstra algorithm.</span>
               </div>
               <button type="submit" id="dispatchBtn" class="neo-btn-large dispatch-btn">
-                <span class="btn-icon">📡</span> DISPATCH EMERGENCY PACKET
+                <span class="btn-icon">📡</span> TRANSMIT INTER-MEMBER PACKET
               </button>
             </div>
           </form>
@@ -327,11 +395,48 @@
           <!-- DISPATCHED PACKET LEDGER -->
           <div class="packet-ledger">
             <div class="ledger-header">
-              <h4>Recent Transmission History</h4>
+              <h4>Inter-Member Transmission History</h4>
               <span class="ledger-count" id="ledgerCount">0 Dispatched</span>
             </div>
             <div class="ledger-list" id="ledgerList">
               <!-- Dynamically rendered -->
+            </div>
+          </div>
+        </div>
+
+        <!-- RESCUE MEMBER MOVEMENT & PATROL LOGS ("WHERE THEY WENT") -->
+        <div class="card-neo movement-card" id="movementCard">
+          <div class="card-header-neo">
+            <div class="header-left">
+              <span class="status-tag cyan">PATROL & MOVEMENT AUDIT</span>
+              <h3>Rescue Member Field Logs ("Where They Went")</h3>
+            </div>
+            <button id="quickLogMovementBtn" class="neo-btn-sm success" title="Log a new movement stop for any rescue team">+ Log Waypoint</button>
+          </div>
+
+          <!-- Rescue Member Selection Tabs -->
+          <div class="member-tab-row" id="movementMemberTabs">
+            <button class="member-tab-btn active" data-node="A">Team 1 (Alpha)</button>
+            <button class="member-tab-btn" data-node="B">Ambulance (Med)</button>
+            <button class="member-tab-btn" data-node="C">Drone (Recon)</button>
+            <button class="member-tab-btn" data-node="D">Team 2 (Bravo)</button>
+            <button class="member-tab-btn" data-node="E">Relief Camp</button>
+            <button class="member-tab-btn" data-node="F">Command HQ</button>
+          </div>
+
+          <!-- Selected Member Summary Header -->
+          <div class="movement-summary-ribbon" id="movementSummaryRibbon">
+            <!-- Dynamically populated -->
+          </div>
+
+          <!-- Chronological Patrol Stops / Where They Went -->
+          <div class="movement-timeline-wrapper">
+            <div class="movement-timeline-header">
+              <span class="trail-header-title">📍 Chronological Itinerary & Stops Visited</span>
+              <span class="trail-total-badge" id="movementTotalDistanceBadge">Total Patrol: 3.86 km</span>
+            </div>
+            <div class="movement-stops-list" id="movementStopsList">
+              <!-- Chronological cards rendered dynamically -->
             </div>
           </div>
         </div>
@@ -475,11 +580,151 @@
                 </div>
               </div>
             </div>
+
+            <!-- 5. AUTONOMOUS BACKTRACKING & BLACK BOX LOCATION PROTOCOL -->
+            <div class="flow-block">
+              <div class="block-num">05</div>
+              <div class="block-body">
+                <h3>Autonomous Backtracking & Last-Known-Location Protocol</h3>
+                <p>
+                  When physical disaster strikes (flash floods, building collapses, battery exhaustion), mobile rescue units and relays can be unexpectedly severed from the mesh.
+                </p>
+                <div class="flow-step-grid">
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 1</span>
+                    <h4>Telemetry Breadcrumb Buffer</h4>
+                    <p>Each field node periodically synchronizes GPS coordinates, elevation, battery level, and peer neighbor states into a distributed circular breadcrumb cache.</p>
+                  </div>
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 2</span>
+                    <h4>Disconnection Freezing</h4>
+                    <p>Upon heartbeat timeout or sudden drop (status = 'down'), the node's last confirmed coordinates and telemetry state are frozen in non-volatile memory and broadcast as a last-known-location beacon.</p>
+                  </div>
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 3</span>
+                    <h4>Backtracking Vector Computation</h4>
+                    <p>The mesh computes the Haversine distance and compass bearing from all surviving active nodes to identify the closest responder unit and shortest search-and-rescue path.</p>
+                  </div>
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 4</span>
+                    <h4>Rescue Dispatch & Convergence</h4>
+                    <p>Command controllers can dispatch search teams along the backtracking vector, while Dijkstra dynamically routes surrounding emergency traffic away from the failure zone.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="modal-footer">
             <button class="neo-btn-large primary" id="closeFlowModalFooterBtn">Return to Command Dashboard</button>
           </div>
+        </div>
+      </div>
+
+      <!-- NODE GPS TRAIL / BREADCRUMB MODAL -->
+      <div class="modal-backdrop hidden" id="trailModal">
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <span class="badge-alert" style="background: var(--color-cyan); border-color: #67e8f9;">BREADCRUMB TELEMETRY</span>
+              <h2>Node Location History & Backtracking Log</h2>
+            </div>
+            <button class="close-modal-btn" id="closeTrailModalBtn">✕</button>
+          </div>
+          <div class="modal-content">
+            <div class="modal-filter-row">
+              <label for="trailNodeSelect">Inspect Node Trail:</label>
+              <select id="trailNodeSelect" class="neo-select">
+                <option value="A">Node A - Rescue Team 1</option>
+                <option value="B">Node B - Ambulance Unit</option>
+                <option value="C">Node C - Drone Air Relay</option>
+                <option value="D">Node D - Rescue Team 2</option>
+                <option value="E">Node E - Relief Camp</option>
+                <option value="F">Node F - Command Center</option>
+              </select>
+              <button id="refreshTrailBtn" class="neo-btn-sm primary">Refresh Trail</button>
+            </div>
+
+            <div class="trail-summary-card" id="trailSummaryCard">
+              <!-- Summary of current & last saved location -->
+            </div>
+
+            <div class="trail-timeline-container" id="trailTimelineContainer">
+              <!-- Timeline entries -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="neo-btn-large primary" id="closeTrailModalFooterBtn">Close Trail Log</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- UPDATE FIELD POSITION & LOG MOVEMENT MODAL -->
+      <div class="modal-backdrop hidden" id="updatePosModal">
+        <div class="modal-card" style="max-width: 620px;">
+          <div class="modal-header">
+            <div>
+              <span class="status-tag emerald">GPS & PATROL TRACKER</span>
+              <h2>Log Rescue Member Movement Waypoint</h2>
+            </div>
+            <button class="close-modal-btn" id="closeUpdatePosModalBtn">✕</button>
+          </div>
+          <form id="updatePosForm" class="modal-content">
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="updatePosNodeSelect">Rescue Member / Unit:</label>
+              <select id="updatePosNodeSelect" class="neo-select">
+                <option value="A">Rescue Team 1 (Squad Alpha)</option>
+                <option value="B">Ambulance Unit (Medical Support)</option>
+                <option value="C">Drone Relay (Aerial Recon Scout)</option>
+                <option value="D">Rescue Team 2 (Squad Bravo)</option>
+                <option value="E">Relief Camp (Logistics Hub)</option>
+                <option value="F">Command Center (Incident HQ)</option>
+              </select>
+            </div>
+
+            <!-- Quick Patrol Destination Presets -->
+            <div class="preset-chips" style="margin-bottom: 12px;">
+              <span class="preset-label">Quick Waypoints:</span>
+              <button type="button" class="preset-chip" id="presetNorthRidgeBtn" data-loc="Sector 4 - High Ridge Point" data-lat="34.0535" data-lng="-118.2410" data-act="High Elevation Relay" data-note="Relocated to rocky promontory; line-of-sight to Base Camp restored.">North Ridge (+350m)</button>
+              <button type="button" class="preset-chip" id="presetMedJunctionBtn" data-loc="Sector 2 - Road Clearing Hub" data-lat="34.0470" data-lng="-118.2540" data-act="Medical Rendezvous" data-note="Met Ambulance Unit; exchanged battery packs and updated tactical map.">Medical Junction (+420m)</button>
+              <button type="button" class="preset-chip" id="presetDebrisGridBtn" data-loc="Sector 5 - Structural Search Grid" data-lat="34.0425" data-lng="-118.2560" data-act="Grid Search" data-note="Canine team conducted perimeter search; structural debris stabilized.">Debris Grid (+280m)</button>
+              <button type="button" class="preset-chip" id="presetBaseCampBtn" data-loc="Zone E - Relief Logistics Depot" data-lat="34.0495" data-lng="-118.2670" data-act="Supply Replenishment" data-note="Returned to Base Camp for lithium battery swap and antenna tuning.">Base Camp (+1.4km)</button>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="updateLocationInput">Destination / Landmark Name ("Where They Went"):</label>
+              <input type="text" id="updateLocationInput" class="neo-input" placeholder="e.g. Sector 4 - High Ridge Observation Post" required />
+            </div>
+
+            <div class="form-grid" style="margin-bottom: 12px;">
+              <div class="form-group">
+                <label for="updateLatInput">Latitude (°N):</label>
+                <input type="number" step="0.0001" id="updateLatInput" class="neo-input" placeholder="34.0522" required />
+              </div>
+              <div class="form-group">
+                <label for="updateLngInput">Longitude (°W):</label>
+                <input type="number" step="0.0001" id="updateLngInput" class="neo-input" placeholder="-118.2437" required />
+              </div>
+            </div>
+
+            <div class="form-grid" style="margin-bottom: 12px;">
+              <div class="form-group">
+                <label for="updateActivityInput">Mission Activity / Task:</label>
+                <input type="text" id="updateActivityInput" class="neo-input" placeholder="e.g. Perimeter Patrol, Radio Beacon Setup, Transit" />
+              </div>
+              <div class="form-group">
+                <label for="updateNoteInput">Field Note / Operational Detail:</label>
+                <input type="text" id="updateNoteInput" class="neo-input" placeholder="e.g. Crossed gorge trail; verified link to Team 2" />
+              </div>
+            </div>
+
+            <p style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+              Logging this waypoint records where this rescue member went with precise GPS coordinates, timestamp, activity, and distance. If this squad's radio signal is subsequently severed, this cached point becomes the frozen last-known location used for emergency backtracking.
+            </p>
+            <div class="modal-footer" style="padding: 14px 0 0 0; background: transparent; border-top: none;">
+              <button type="submit" class="neo-btn-large success full-width">📡 Log Movement & Update Coordinates</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

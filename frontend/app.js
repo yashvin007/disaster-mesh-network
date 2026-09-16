@@ -23,6 +23,8 @@ const healthBarFill = document.getElementById('healthBarFill');
 const aliveCountEl = document.getElementById('aliveCount');
 const degradedCountEl = document.getElementById('degradedCount');
 const downCountEl = document.getElementById('downCount');
+const backtrackCountEl = document.getElementById('backtrackCount');
+const backtrackHudSubEl = document.getElementById('backtrackHudSub');
 const activeLinksEl = document.getElementById('activeLinks');
 const connectedStatusEl = document.getElementById('connectedStatus');
 const hudRouteLatencyEl = document.getElementById('hudRouteLatency');
@@ -40,11 +42,57 @@ const inspStatus = document.getElementById('inspStatus');
 const inspBattery = document.getElementById('inspBattery');
 const inspSignal = document.getElementById('inspSignal');
 const inspLocation = document.getElementById('inspLocation');
+const inspCoords = document.getElementById('inspCoords');
+const inspBacktrackBox = document.getElementById('inspBacktrackBox');
+const inspSavedLocation = document.getElementById('inspSavedLocation');
+const inspSavedCoords = document.getElementById('inspSavedCoords');
+const inspSavedTime = document.getElementById('inspSavedTime');
+const inspSavedStats = document.getElementById('inspSavedStats');
+const inspSavedVector = document.getElementById('inspSavedVector');
+const inspDispatchVectorBtn = document.getElementById('inspDispatchVectorBtn');
+const inspViewTrailBtn = document.getElementById('inspViewTrailBtn');
 const inspFailBtn = document.getElementById('inspFailBtn');
 const inspDegradeBtn = document.getElementById('inspDegradeBtn');
 const inspRestoreBtn = document.getElementById('inspRestoreBtn');
 const closeInspectorBtn = document.getElementById('closeInspectorBtn');
 let inspectedNodeId = null;
+let showBacktrackVectors = true;
+let backtrackingRegistry = {};
+
+// Backtracking Registry & Modals Elements
+const toggleBacktrackOverlayBtn = document.getElementById('toggleBacktrackOverlayBtn');
+const backtrackHeaderTag = document.getElementById('backtrackHeaderTag');
+const backtrackGlobalBadge = document.getElementById('backtrackGlobalBadge');
+const backtrackRegistryList = document.getElementById('backtrackRegistryList');
+const openTrailModalBtn = document.getElementById('openTrailModalBtn');
+const openUpdatePosModalBtn = document.getElementById('openUpdatePosModalBtn');
+
+const trailModal = document.getElementById('trailModal');
+const closeTrailModalBtn = document.getElementById('closeTrailModalBtn');
+const closeTrailModalFooterBtn = document.getElementById('closeTrailModalFooterBtn');
+const trailNodeSelect = document.getElementById('trailNodeSelect');
+const refreshTrailBtn = document.getElementById('refreshTrailBtn');
+const trailSummaryCard = document.getElementById('trailSummaryCard');
+const trailTimelineContainer = document.getElementById('trailTimelineContainer');
+
+const updatePosModal = document.getElementById('updatePosModal');
+const closeUpdatePosModalBtn = document.getElementById('closeUpdatePosModalBtn');
+const updatePosForm = document.getElementById('updatePosForm');
+const updatePosNodeSelect = document.getElementById('updatePosNodeSelect');
+const updateLocationInput = document.getElementById('updateLocationInput');
+const updateLatInput = document.getElementById('updateLatInput');
+const updateLngInput = document.getElementById('updateLngInput');
+const updateActivityInput = document.getElementById('updateActivityInput');
+const updateNoteInput = document.getElementById('updateNoteInput');
+
+// Rescue Member Movement Logs Elements
+const movementMemberTabs = document.getElementById('movementMemberTabs');
+const movementSummaryRibbon = document.getElementById('movementSummaryRibbon');
+const movementTotalDistanceBadge = document.getElementById('movementTotalDistanceBadge');
+const movementStopsList = document.getElementById('movementStopsList');
+const quickLogMovementBtn = document.getElementById('quickLogMovementBtn');
+let activeMovementNodeId = 'A';
+let rescueMovementLogsData = null;
 
 // Routing Controls
 const routingMetricSelect = document.getElementById('routingMetricSelect');
@@ -150,6 +198,14 @@ function connectWebSocket() {
       const payload = JSON.parse(event.data);
       if (!payload.nodes) return;
       networkData = { nodes: payload.nodes, edges: payload.edges };
+      if (payload.backtracking) {
+        backtrackingRegistry = payload.backtracking;
+        renderBacktrackingRegistry(backtrackingRegistry);
+      }
+      if (payload.rescue_movement_logs) {
+        rescueMovementLogsData = payload.rescue_movement_logs;
+        renderRescueMovementLogs(rescueMovementLogsData);
+      }
       updateStats({
         network_health: payload.network_health,
         alive: payload.alive_count ?? payload.nodes.filter((n) => n.status === 'alive').length,
@@ -356,11 +412,27 @@ function renderNetwork() {
   const visNodes = networkData.nodes.map((node) => {
     const isRouteNode = currentRoute.includes(node.id);
     const visuals = getNodeVisuals(node, isRouteNode);
+    const isDown = node.status === 'down';
+    const lastLoc = node.last_known_location;
+
+    let labelText = `${node.id}\n${node.name.split(' ')[0]}`;
+    if (isDown) {
+      const locTag = lastLoc?.location ? lastLoc.location.split('(')[0].trim() : (node.location ? node.location.split('(')[0].trim() : 'Field Sector');
+      labelText = `⚠️ ${node.id} [LOST]\n📍 ${locTag}`;
+    }
+
+    let tooltip = `Node ${node.id} (${node.name})\nRole: ${node.role}\nStatus: ${node.status.toUpperCase()}\nBattery: ${node.battery}%\nSignal: ${node.signal_strength}%\nLocation: ${node.location}`;
+    if (isDown && lastLoc) {
+      const v = lastLoc?.backtrack_search_vector;
+      const recTime = lastLoc?.recorded_at || lastLoc?.timestamp || 'Recent';
+      tooltip = `🚨 OFFLINE BEACON: Node ${node.id} (${node.name})\nStatus: DOWN / ISOLATED\n📍 LAST SAVED LOCATION: ${lastLoc?.location || node.location}\nGPS: ${lastLoc?.coordinates?.lat?.toFixed(4) || 0}°N, ${lastLoc?.coordinates?.lng?.toFixed(4) || 0}°W (Alt: ${lastLoc?.coordinates?.altitude_m || 0}m)\nCutoff Battery: ${lastLoc?.battery_at_cutoff ?? 0}%\nSignal: ${lastLoc?.signal_at_cutoff ?? 0}%\nRecorded: ${recTime}\n` +
+        (v ? `Rescue Vector: from Node ${v.nearest_active_node_id} (${v.distance_meters}m @ ${v.bearing_degrees}°, ~${v.estimated_reach_time_mins} min)` : 'Vector: calculating...');
+    }
 
     return {
       id: node.id,
-      label: `${node.id}\n${node.name.split(' ')[0]}`,
-      title: `Node ${node.id} (${node.name})&#10;Role: ${node.role}&#10;Status: ${node.status.toUpperCase()}&#10;Battery: ${node.battery}%&#10;Signal: ${node.signal_strength}%&#10;Location: ${node.location}`,
+      label: labelText,
+      title: tooltip,
       color: {
         background: visuals.background,
         border: visuals.border,
@@ -369,13 +441,13 @@ function renderNetwork() {
           border: '#38bdf8',
         },
       },
-      borderWidth: isRouteNode ? 3 : 2,
+      borderWidth: isDown ? 3 : (isRouteNode ? 3 : 2),
       shape: 'box',
       shapeProperties: { borderRadius: 8 },
       font: {
-        color: '#f8fafc',
+        color: isDown ? '#fca5a5' : '#f8fafc',
         face: 'ui-monospace, monospace',
-        size: 13,
+        size: isDown ? 12 : 13,
         bold: true,
       },
       margin: 10,
@@ -436,6 +508,41 @@ function renderNetwork() {
       smooth: { type: 'continuous', roundness: 0.2 },
     };
   });
+
+  // Render Rescue Backtrack Vectors if enabled
+  if (showBacktrackVectors) {
+    networkData.nodes.forEach((node) => {
+      if (node.status === 'down' && node.last_known_location?.backtrack_search_vector) {
+        const v = node.last_known_location.backtrack_search_vector;
+        visEdges.push({
+          id: `backtrack-${v.nearest_active_node_id}-${node.id}`,
+          from: v.nearest_active_node_id,
+          to: node.id,
+          label: `🚨 SEARCH VECTOR (${v.distance_meters}m, ${v.bearing_degrees}°)`,
+          font: {
+            color: '#fbbf24',
+            size: 11,
+            face: 'ui-monospace, monospace',
+            strokeWidth: 2,
+            strokeColor: '#451a03',
+          },
+          color: {
+            color: '#f59e0b',
+            highlight: '#fbbf24',
+          },
+          width: 3,
+          dashes: [6, 4],
+          arrows: {
+            to: {
+              enabled: true,
+              scaleFactor: 1.0,
+            },
+          },
+          smooth: { type: 'curvedCW', roundness: 0.25 },
+        });
+      }
+    });
+  }
 
   if (networkInstance) {
     networkInstance.setData({ nodes: visNodes, edges: visEdges });
@@ -499,6 +606,39 @@ function showNodeInspector(nodeId) {
   inspBattery.textContent = `${node.battery}%`;
   inspSignal.textContent = `${node.signal_strength}%`;
   inspLocation.textContent = node.location;
+  if (inspCoords) {
+    inspCoords.textContent = node.coordinates
+      ? `${node.coordinates.lat.toFixed(4)}° N, ${node.coordinates.lng.toFixed(4)}° W`
+      : 'N/A';
+  }
+
+  // Handle Last Saved Location & Backtracking Telemetry Box
+  if (inspBacktrackBox) {
+    if (node.status === 'down' || node.last_known_location) {
+      const lastLoc = node.last_known_location;
+      if (lastLoc) {
+        inspBacktrackBox.classList.remove('hidden');
+        inspSavedLocation.textContent = lastLoc?.location || node.location || 'Unknown Field Position';
+        inspSavedCoords.textContent = `${lastLoc?.coordinates?.lat?.toFixed(4) || 0}° N, ${lastLoc?.coordinates?.lng?.toFixed(4) || 0}° W (Alt: ${lastLoc?.coordinates?.altitude_m || 0}m)`;
+        const recTimeStr = lastLoc?.recorded_at
+          ? (isNaN(new Date(lastLoc.recorded_at).getTime()) ? String(lastLoc.recorded_at) : new Date(lastLoc.recorded_at).toLocaleTimeString())
+          : (lastLoc?.timestamp ? new Date(lastLoc.timestamp).toLocaleTimeString() : 'Recent');
+        inspSavedTime.textContent = `${recTimeStr} [${lastLoc?.dispatch_status || 'LOST'}]`;
+        inspSavedStats.textContent = `Battery: ${lastLoc?.battery_at_cutoff ?? 0}% | Signal: ${lastLoc?.signal_at_cutoff ?? 0}%`;
+
+        const v = lastLoc?.backtrack_search_vector;
+        if (v) {
+          inspSavedVector.textContent = `Deploy from Node ${v.nearest_active_node_id} (${v.distance_meters}m @ ${v.bearing_degrees}° ${v.cardinal_direction || ''}, ~${v.estimated_reach_time_mins} min)`;
+        } else {
+          inspSavedVector.textContent = 'Calculating search corridor from surviving units...';
+        }
+      } else {
+        inspBacktrackBox.classList.add('hidden');
+      }
+    } else {
+      inspBacktrackBox.classList.add('hidden');
+    }
+  }
 
   nodeInspector.classList.remove('hidden');
 }
@@ -524,6 +664,19 @@ inspRestoreBtn.addEventListener('click', async () => {
   if (!inspectedNodeId) return;
   await restoreNodeAction(inspectedNodeId);
   showNodeInspector(inspectedNodeId);
+});
+
+inspDispatchVectorBtn.addEventListener('click', async () => {
+  if (!inspectedNodeId) return;
+  await dispatchRescueBacktrackAction(inspectedNodeId);
+  showNodeInspector(inspectedNodeId);
+});
+
+inspViewTrailBtn.addEventListener('click', async () => {
+  if (!inspectedNodeId) return;
+  trailNodeSelect.value = inspectedNodeId;
+  await loadNodeTrail(inspectedNodeId);
+  trailModal.classList.remove('hidden');
 });
 
 // Event Logging System
@@ -562,6 +715,423 @@ async function refreshEvents() {
   }
 }
 
+// ==========================================================================
+// BACKTRACKING & LAST SAVED LOCATION CONTROLS
+// ==========================================================================
+
+function renderBacktrackingRegistry(registry = {}) {
+  let offlineNodesList = [];
+  if (Array.isArray(registry)) {
+    offlineNodesList = registry;
+  } else if (registry && Array.isArray(registry.offline_nodes)) {
+    offlineNodesList = registry.offline_nodes;
+  } else if (registry && registry.offline_nodes_map && typeof registry.offline_nodes_map === 'object') {
+    offlineNodesList = Object.values(registry.offline_nodes_map);
+  } else if (registry && typeof registry === 'object') {
+    offlineNodesList = Object.keys(registry)
+      .filter((k) => k !== 'offline_count' && k !== 'active_count' && k !== 'all_nodes_locations' && k !== 'offline_nodes' && k !== 'offline_nodes_map')
+      .map((k) => registry[k])
+      .filter((n) => n && typeof n === 'object' && (n.status === 'down' || n.current_status === 'down' || n.last_known_location));
+  }
+
+  // Also include any nodes that are currently down in networkData.nodes if not already present
+  if (networkData && Array.isArray(networkData.nodes)) {
+    networkData.nodes.forEach((n) => {
+      if (n.status === 'down' && !offlineNodesList.some((item) => (item.id || item.node_id) === n.id)) {
+        offlineNodesList.push({
+          id: n.id,
+          name: n.name,
+          role: n.role,
+          current_status: 'down',
+          last_known_location: n.last_known_location,
+        });
+      }
+    });
+  }
+
+  const count = offlineNodesList.length;
+
+  if (backtrackCountEl) {
+    if (count === 0) {
+      backtrackCountEl.textContent = '0 BEACONS';
+      backtrackCountEl.className = 'hud-val text-emerald';
+      if (backtrackHudSubEl) backtrackHudSubEl.textContent = 'All Nodes Online';
+      if (backtrackGlobalBadge) {
+        backtrackGlobalBadge.className = 'badge-beacon standby';
+        backtrackGlobalBadge.textContent = 'ALL UNITS ONLINE';
+      }
+    } else {
+      backtrackCountEl.textContent = `${count} BEACON${count > 1 ? 'S' : ''}`;
+      backtrackCountEl.className = 'hud-val text-red';
+      if (backtrackHudSubEl) backtrackHudSubEl.textContent = 'Active Search Vectors';
+      if (backtrackGlobalBadge) {
+        backtrackGlobalBadge.className = 'badge-beacon active';
+        backtrackGlobalBadge.textContent = `${count} UNIT${count > 1 ? 'S' : ''} LOST`;
+      }
+    }
+  }
+
+  if (!backtrackRegistryList) return;
+  backtrackRegistryList.innerHTML = '';
+
+  if (count === 0) {
+    backtrackRegistryList.innerHTML = `
+      <div class="empty-backtrack-state" id="emptyBacktrackState">
+        <span class="empty-icon">🛰️</span>
+        <span>All 6 nodes actively heartbeating. Telemetry breadcrumb buffers synchronized.</span>
+      </div>
+    `;
+    return;
+  }
+
+  offlineNodesList.forEach((data) => {
+    if (!data || typeof data !== 'object') return;
+    const nodeId = data.id || data.node_id;
+    if (!nodeId) return;
+
+    const nodeRef = networkData?.nodes?.find((n) => n.id === nodeId);
+    const nodeName = data.name || nodeRef?.name || `Squad ${nodeId}`;
+
+    const lastLoc = data.last_known_location || nodeRef?.last_known_location || {
+      location: data.location || nodeRef?.location || 'Unknown Field Position',
+      coordinates: data.coordinates || nodeRef?.coordinates || { lat: 34.0522, lng: -118.2437, altitude_m: 0 },
+      recorded_at: null,
+      timestamp: null,
+      battery_at_cutoff: data.battery ?? nodeRef?.battery ?? 0,
+      signal_at_cutoff: data.signal_strength ?? nodeRef?.signal_strength ?? 0,
+      dispatch_status: 'SEARCHING',
+      route_taken: [data.location || nodeRef?.location || 'Base Station Depot'],
+      total_patrol_distance_m: 0,
+      activity: 'Field Transit',
+    };
+
+    const vector = data?.backtrack_search_vector || lastLoc?.backtrack_search_vector;
+
+    let recordedTime = 'Just now';
+    if (lastLoc?.recorded_at) {
+      recordedTime = isNaN(new Date(lastLoc.recorded_at).getTime())
+        ? String(lastLoc.recorded_at)
+        : new Date(lastLoc.recorded_at).toLocaleTimeString();
+    } else if (lastLoc?.timestamp) {
+      recordedTime = isNaN(new Date(lastLoc.timestamp).getTime())
+        ? String(lastLoc.timestamp)
+        : new Date(lastLoc.timestamp).toLocaleTimeString();
+    }
+
+    const card = document.createElement('div');
+    card.className = 'backtrack-unit-card';
+
+    let vectorHtml = '';
+    if (vector) {
+      vectorHtml = `
+        <div class="unit-vector-box">
+          ⚡ <strong>Backtrack Vector:</strong> Deploy from <strong>Node ${vector.nearest_active_node_id}</strong> (${vector.distance_meters}m @ ${vector.bearing_degrees}° ${vector.cardinal_direction || ''}, ~${vector.estimated_reach_time_mins} min ETA)
+        </div>
+      `;
+    } else {
+      vectorHtml = `
+        <div class="unit-vector-box">
+          ⚡ <strong>Backtrack Vector:</strong> All neighbor units severed. Awaiting external drone beacon.
+        </div>
+      `;
+    }
+
+    const routeText = lastLoc?.route_taken && lastLoc.route_taken.length > 0
+      ? lastLoc.route_taken.join(' ➔ ')
+      : 'Base Station Depot';
+
+    const distText = lastLoc?.total_patrol_distance_m
+      ? (lastLoc.total_patrol_distance_m >= 1000
+          ? `${(lastLoc.total_patrol_distance_m / 1000).toFixed(2)} km`
+          : `${lastLoc.total_patrol_distance_m} m`)
+      : 'N/A';
+
+    card.innerHTML = `
+      <div class="unit-card-header">
+        <span class="unit-id-badge">
+          <span class="pulse-beacon-dot"></span>
+          NODE ${nodeId} (${nodeName})
+        </span>
+        <span class="unit-time-tag">Signal Cutoff at ${recordedTime}</span>
+      </div>
+      <div class="unit-card-body">
+        <div class="unit-loc-row">📍 <strong>Last Saved Location:</strong> ${lastLoc?.location || 'Field Sector'}</div>
+        <div class="unit-coords-row">GPS: ${lastLoc?.coordinates?.lat?.toFixed(4) || 0}°N, ${lastLoc?.coordinates?.lng?.toFixed(4) || 0}°W (Alt: ${lastLoc?.coordinates?.altitude_m || 0}m)</div>
+        <div style="font-size: 0.76rem; color: #67e8f9; margin-top: 2px;">
+          🗺️ <strong>Patrol Route ("Where They Went"):</strong> ${routeText} [LOST]
+        </div>
+        <div style="font-size: 0.72rem; color: #94a3b8; display: flex; justify-content: space-between; margin-top: 2px;">
+          <span>Activity at Cutoff: <strong>${lastLoc?.activity || lastLoc?.last_activity || 'Field Transit'}</strong></span>
+          <span>Total Traversed: <strong style="color: #38bdf8;">${distText}</strong></span>
+        </div>
+        <div style="font-size: 0.72rem; color: #94a3b8;">Cutoff Battery: ${lastLoc?.battery_at_cutoff ?? 0}% | Signal: ${lastLoc?.signal_at_cutoff ?? 0}% | Dispatch: ${lastLoc?.dispatch_status || 'PENDING'}</div>
+        ${vectorHtml}
+      </div>
+      <div class="unit-card-actions">
+        <button class="neo-btn-sm danger full-width" onclick="dispatchRescueBacktrackAction('${nodeId}')">
+          🚨 Dispatch Search
+        </button>
+        <button class="neo-btn-sm" onclick="selectRescueMovementMember('${nodeId}')" title="Audit this squad's full patrol itinerary">
+          Patrol Log
+        </button>
+        <button class="neo-btn-sm" onclick="showNodeInspector('${nodeId}'); if (networkInstance) networkInstance.focus('${nodeId}', { scale: 1.2, animation: true });">
+          Inspect
+        </button>
+      </div>
+    `;
+
+    backtrackRegistryList.appendChild(card);
+  });
+}
+
+// Make dispatchRescueBacktrackAction globally accessible
+window.dispatchRescueBacktrackAction = async function(nodeId) {
+  try {
+    const res = await fetchJson(`${API_BASE}/network/node/${encodeURIComponent(nodeId)}/backtrack/dispatch`, {
+      method: 'POST',
+    });
+    messageResultEl.className = 'dispatch-result-box success';
+    messageResultEl.innerHTML = `
+      <span>🚨 <strong>SEARCH & RESCUE DISPATCHED:</strong> ${res.dispatch_report?.summary || res.message}</span>
+    `;
+
+    if (networkInstance) {
+      networkInstance.focus(nodeId, {
+        scale: 1.3,
+        animation: { duration: 800, easingFunction: 'easeInOutQuad' },
+      });
+    }
+
+    await refreshState();
+    await refreshEvents();
+  } catch (err) {
+    messageResultEl.className = 'dispatch-result-box failed';
+    messageResultEl.textContent = `Rescue dispatch error: ${err.message}`;
+  }
+};
+
+// Select Rescue Movement Member & Scroll
+window.selectRescueMovementMember = function(nodeId) {
+  activeMovementNodeId = nodeId;
+  renderRescueMovementLogs(rescueMovementLogsData);
+  const movementCard = document.getElementById('movementCard');
+  if (movementCard) {
+    movementCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+};
+
+// Render Rescue Member Movement Logs ("Where They Went")
+function renderRescueMovementLogs(logsData) {
+  if (!logsData || !logsData.rescue_movement_logs) return;
+  const logs = logsData.rescue_movement_logs;
+  const currentMember = logs[activeMovementNodeId];
+
+  // Update tabs active state
+  if (movementMemberTabs) {
+    Array.from(movementMemberTabs.children).forEach((btn) => {
+      const nId = btn.getAttribute('data-node');
+      btn.classList.toggle('active', nId === activeMovementNodeId);
+      const nodeObj = networkData.nodes.find((n) => n.id === nId);
+      if (nodeObj && nodeObj.status === 'down') {
+        btn.style.color = '#ef4444';
+      } else {
+        btn.style.color = '';
+      }
+    });
+  }
+
+  if (!currentMember) return;
+
+  // Update Summary Ribbon
+  if (movementSummaryRibbon) {
+    const isDown = currentMember.status === 'down';
+    const statusColor = isDown
+      ? 'var(--color-red)'
+      : currentMember.status === 'degraded'
+      ? 'var(--color-amber)'
+      : 'var(--color-emerald)';
+    const statusText = isDown
+      ? '🚨 CONTACT LOST (BACKTRACKING ACTIVE)'
+      : currentMember.status === 'degraded'
+      ? '⚠️ DEGRADED LINK'
+      : '✅ ONLINE & PATROLLING';
+
+    movementSummaryRibbon.innerHTML = `
+      <div class="summary-stat-box">
+        <span class="summary-stat-label">Rescue Member</span>
+        <span class="summary-stat-val" style="color: var(--color-cyan);">Node ${currentMember.node_id} - ${currentMember.name}</span>
+      </div>
+      <div class="summary-stat-box">
+        <span class="summary-stat-label">Tactical Role</span>
+        <span class="summary-stat-val">${currentMember.role}</span>
+      </div>
+      <div class="summary-stat-box">
+        <span class="summary-stat-label">Radio Status</span>
+        <span class="summary-stat-val" style="color: ${statusColor};">${statusText}</span>
+      </div>
+      <div class="summary-stat-box">
+        <span class="summary-stat-label">Total Patrol Traversed</span>
+        <span class="summary-stat-val" style="color: #38bdf8;">${currentMember.total_patrol_distance_formatted || (currentMember.total_patrol_distance_m + ' m')}</span>
+      </div>
+      <div class="summary-stat-box">
+        <span class="summary-stat-label">Waypoints Logged</span>
+        <span class="summary-stat-val">${currentMember.waypoints_count} Stops</span>
+      </div>
+      <div class="summary-stat-box">
+        <span class="summary-stat-label">Power & Signal</span>
+        <span class="summary-stat-val">🔋 ${currentMember.battery}% | 📶 ${currentMember.signal_strength}%</span>
+      </div>
+    `;
+  }
+
+  // Update total badge
+  if (movementTotalDistanceBadge) {
+    movementTotalDistanceBadge.textContent = `Total Patrol: ${currentMember.total_patrol_distance_formatted || (currentMember.total_patrol_distance_m + ' m')}`;
+  }
+
+  // Update Stops List ("Where They Went")
+  if (movementStopsList) {
+    movementStopsList.innerHTML = '';
+    const history = currentMember.location_history || [];
+
+    if (history.length === 0) {
+      movementStopsList.innerHTML = `
+        <div style="color: var(--text-muted); font-size: 0.8rem; padding: 16px; text-align: center;">
+          No patrol stops logged yet for ${currentMember.name}. Use "+ Log Waypoint" to record their movement.
+        </div>
+      `;
+      return;
+    }
+
+    // Display in reverse chronological order (latest stop on top)
+    const reversedHistory = history.slice().reverse();
+    reversedHistory.forEach((stop, index) => {
+      const isLatest = index === 0;
+      const isDownStop = isLatest && currentMember.status === 'down';
+      const stopCard = document.createElement('div');
+      stopCard.className = `patrol-stop-card ${isLatest ? 'latest-stop' : ''} ${isDownStop ? 'severed-stop' : ''}`;
+
+      const stopIdx = history.length - index;
+      const timeStr = stop.timestamp ? new Date(stop.timestamp).toLocaleTimeString() : `Stop #${stopIdx}`;
+      const distFromPrev = stop.distance_from_prev_m
+        ? `+${stop.distance_from_prev_m >= 1000 ? (stop.distance_from_prev_m / 1000).toFixed(2) + ' km' : stop.distance_from_prev_m + ' m'}`
+        : 'Starting Depot';
+
+      stopCard.innerHTML = `
+        <div class="stop-top-row">
+          <span class="stop-num-tag">
+            ${isDownStop ? '🚨 LAST SAVED LOCATION (CUTOFF POINT)' : isLatest ? '🟢 CURRENT LOCATION (ACTIVE)' : `STOP #${stopIdx}`}
+          </span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span class="stop-activity-badge">${stop.activity || 'Field Movement'}</span>
+            <span class="stop-time-tag">${timeStr}</span>
+          </div>
+        </div>
+        <div class="stop-location-name">
+          <span>📍</span>
+          <strong>${stop.location}</strong>
+        </div>
+        <div class="stop-coords-row">
+          <span>GPS: ${stop.coordinates?.lat?.toFixed(4)}°N, ${stop.coordinates?.lng?.toFixed(4)}°W (Alt: ${stop.coordinates?.altitude_m || 0}m)</span>
+          <span class="stop-distance-gain">Leg Distance: ${distFromPrev}</span>
+        </div>
+        ${stop.note ? `<div class="stop-notes">"${stop.note}"</div>` : ''}
+        <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">
+          <span>Node Telemetry at Stop: Battery ${stop.battery}% | RF ${stop.signal_strength}%</span>
+          <span style="color: ${stop.status === 'down' ? 'var(--color-red)' : 'var(--color-emerald)'}">${stop.status.toUpperCase()}</span>
+        </div>
+      `;
+
+      movementStopsList.appendChild(stopCard);
+    });
+  }
+}
+
+async function loadNodeTrail(nodeId) {
+  try {
+    const data = await fetchJson(`${API_BASE}/network/node/${encodeURIComponent(nodeId)}/breadcrumbs`);
+    const crumbs = data.breadcrumbs || [];
+
+    trailSummaryCard.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <strong>Node ${nodeId} Telemetry Trail</strong>
+        <span class="priority-pill normal">${crumbs.length} Logged Breadcrumbs</span>
+      </div>
+      <div>Current Status: <strong>${data.last_known_location ? 'OFFLINE (FROZEN SNAPSHOT)' : 'ONLINE'}</strong></div>
+      <div>Last Recorded Location: <strong>${data.last_known_location ? data.last_known_location.location : (crumbs[crumbs.length - 1]?.location || 'N/A')}</strong></div>
+    `;
+
+    trailTimelineContainer.innerHTML = '';
+    if (crumbs.length === 0) {
+      trailTimelineContainer.innerHTML = '<div style="color: var(--text-muted); padding: 12px;">No historical telemetry breadcrumbs recorded yet.</div>';
+      return;
+    }
+
+    // Display in reverse chronological order
+    crumbs.slice().reverse().forEach((crumb, idx) => {
+      const entry = document.createElement('div');
+      entry.className = 'timeline-entry';
+      const timeStr = crumb.timestamp ? new Date(crumb.timestamp).toLocaleTimeString() : `Ping -${idx}`;
+      const isCutoff = crumb.status === 'down';
+      const legDist = crumb.distance_from_prev_m
+        ? `+${crumb.distance_from_prev_m >= 1000 ? (crumb.distance_from_prev_m / 1000).toFixed(2) + ' km' : crumb.distance_from_prev_m + ' m'}`
+        : '';
+
+      entry.innerHTML = `
+        <div class="timeline-dot ${isCutoff ? 'down' : ''}"></div>
+        <div class="timeline-header">
+          <span>${timeStr} ${crumb.activity ? `[${crumb.activity}]` : ''}</span>
+          <span style="color: ${isCutoff ? 'var(--color-red)' : 'var(--color-emerald)'}">${crumb.status.toUpperCase()}</span>
+        </div>
+        <div class="timeline-loc">${crumb.location}</div>
+        <div class="timeline-meta">
+          GPS: ${crumb.coordinates?.lat?.toFixed(4)}°N, ${crumb.coordinates?.lng?.toFixed(4)}°W | Batt: ${crumb.battery}% | Sig: ${crumb.signal_strength}%
+          ${legDist ? ` | Leg: <span style="color: #38bdf8;">${legDist}</span>` : ''}
+        </div>
+        ${crumb.note ? `<div class="timeline-note">${crumb.note}</div>` : ''}
+      `;
+      trailTimelineContainer.appendChild(entry);
+    });
+  } catch (err) {
+    trailTimelineContainer.innerHTML = `<div class="text-red">Error loading trail: ${err.message}</div>`;
+  }
+}
+
+async function handleLocationUpdate(event) {
+  event.preventDefault();
+  const nodeId = updatePosNodeSelect.value;
+  const location = updateLocationInput.value.trim();
+  const lat = parseFloat(updateLatInput.value);
+  const lng = parseFloat(updateLngInput.value);
+  const activity = updateActivityInput?.value?.trim() || 'Patrol Waypoint';
+  const note = updateNoteInput?.value?.trim() || '';
+
+  if (!location || isNaN(lat) || isNaN(lng)) {
+    return;
+  }
+
+  try {
+    const res = await fetchJson(`${API_BASE}/network/node/${encodeURIComponent(nodeId)}/location`, {
+      method: 'POST',
+      body: JSON.stringify({
+        location,
+        coordinates: { lat, lng },
+        activity,
+        note,
+      }),
+    });
+
+    updatePosModal.classList.add('hidden');
+    messageResultEl.className = 'dispatch-result-box success';
+    messageResultEl.textContent = `LOCATION UPDATED: Node ${nodeId} moved to "${location}" (${lat.toFixed(4)}, ${lng.toFixed(4)}). Activity: ${activity}.`;
+
+    await refreshState();
+    await refreshEvents();
+  } catch (err) {
+    alert(`Failed to update location: ${err.message}`);
+  }
+}
+
 // State Synchronization
 async function refreshState() {
   try {
@@ -570,6 +1140,22 @@ async function refreshState() {
 
     const netData = await fetchJson(`${API_BASE}/network`);
     networkData = netData;
+
+    try {
+      const btData = await fetchJson(`${API_BASE}/network/backtracking`);
+      backtrackingRegistry = btData.backtracking || {};
+      renderBacktrackingRegistry(backtrackingRegistry);
+    } catch (e) {
+      console.warn('Backtracking sync warning:', e);
+    }
+
+    try {
+      const logsData = await fetchJson(`${API_BASE}/network/rescue-movement-logs`);
+      rescueMovementLogsData = logsData;
+      renderRescueMovementLogs(rescueMovementLogsData);
+    } catch (e) {
+      console.warn('Movement logs sync warning:', e);
+    }
 
     await computeDijkstraRoute(senderSelect.value, destinationSelect.value, currentMetric);
   } catch (err) {
@@ -921,6 +1507,108 @@ function initEventListeners() {
 
   closeFlowModalFooterBtn.addEventListener('click', () => {
     projectFlowModal.classList.add('hidden');
+  });
+
+  // Rescue Vector Overlay Toggle
+  if (toggleBacktrackOverlayBtn) {
+    toggleBacktrackOverlayBtn.addEventListener('click', () => {
+      showBacktrackVectors = !showBacktrackVectors;
+      toggleBacktrackOverlayBtn.textContent = showBacktrackVectors ? 'Rescue Vectors: ON' : 'Rescue Vectors: OFF';
+      toggleBacktrackOverlayBtn.style.color = showBacktrackVectors ? 'var(--color-amber)' : 'var(--text-muted)';
+      renderNetwork();
+    });
+  }
+
+  // Trail Modal Listeners
+  if (openTrailModalBtn) {
+    openTrailModalBtn.addEventListener('click', async () => {
+      trailModal.classList.remove('hidden');
+      await loadNodeTrail(trailNodeSelect.value);
+    });
+  }
+
+  if (closeTrailModalBtn) {
+    closeTrailModalBtn.addEventListener('click', () => trailModal.classList.add('hidden'));
+  }
+  if (closeTrailModalFooterBtn) {
+    closeTrailModalFooterBtn.addEventListener('click', () => trailModal.classList.add('hidden'));
+  }
+
+  if (trailNodeSelect) {
+    trailNodeSelect.addEventListener('change', () => loadNodeTrail(trailNodeSelect.value));
+  }
+  if (refreshTrailBtn) {
+    refreshTrailBtn.addEventListener('click', () => loadNodeTrail(trailNodeSelect.value));
+  }
+
+  // Update Position Modal Listeners
+  if (openUpdatePosModalBtn) {
+    openUpdatePosModalBtn.addEventListener('click', () => {
+      const node = networkData.nodes.find((n) => n.id === updatePosNodeSelect.value);
+      if (node) {
+        updateLocationInput.value = node.location || '';
+        updateLatInput.value = node.coordinates?.lat || 34.0522;
+        updateLngInput.value = node.coordinates?.lng || -118.2437;
+      }
+      updatePosModal.classList.remove('hidden');
+    });
+  }
+
+  if (closeUpdatePosModalBtn) {
+    closeUpdatePosModalBtn.addEventListener('click', () => updatePosModal.classList.add('hidden'));
+  }
+
+  if (updatePosNodeSelect) {
+    updatePosNodeSelect.addEventListener('change', () => {
+      const node = networkData.nodes.find((n) => n.id === updatePosNodeSelect.value);
+      if (node) {
+        updateLocationInput.value = node.location || '';
+        updateLatInput.value = node.coordinates?.lat || 34.0522;
+        updateLngInput.value = node.coordinates?.lng || -118.2437;
+      }
+    });
+  }
+
+  if (updatePosForm) {
+    updatePosForm.addEventListener('submit', handleLocationUpdate);
+  }
+
+  // Movement Logs Member Tab Listeners
+  if (movementMemberTabs) {
+    movementMemberTabs.querySelectorAll('.member-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeMovementNodeId = btn.getAttribute('data-node') || 'A';
+        renderRescueMovementLogs(rescueMovementLogsData);
+      });
+    });
+  }
+
+  // Quick Log Movement button
+  if (quickLogMovementBtn) {
+    quickLogMovementBtn.addEventListener('click', () => {
+      updatePosNodeSelect.value = activeMovementNodeId;
+      const node = networkData.nodes.find((n) => n.id === activeMovementNodeId);
+      if (node) {
+        updateLocationInput.value = node.location || '';
+        updateLatInput.value = node.coordinates?.lat || 34.0522;
+        updateLngInput.value = node.coordinates?.lng || -118.2437;
+      }
+      updatePosModal.classList.remove('hidden');
+    });
+  }
+
+  // Quick Waypoint presets in updatePosModal
+  ['presetNorthRidgeBtn', 'presetMedJunctionBtn', 'presetDebrisGridBtn', 'presetBaseCampBtn'].forEach((btnId) => {
+    const btn = document.getElementById(btnId);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.loc) updateLocationInput.value = btn.dataset.loc;
+        if (btn.dataset.lat) updateLatInput.value = btn.dataset.lat;
+        if (btn.dataset.lng) updateLngInput.value = btn.dataset.lng;
+        if (btn.dataset.act && updateActivityInput) updateActivityInput.value = btn.dataset.act;
+        if (btn.dataset.note && updateNoteInput) updateNoteInput.value = btn.dataset.note;
+      });
+    }
   });
 
   // Demo runner

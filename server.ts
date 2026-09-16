@@ -1,5 +1,6 @@
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -19,13 +20,19 @@ import {
   getNetworkHealthSummary,
   restoreNode,
   simulateDisaster,
+  getBacktrackingRegistry,
+  dispatchRescueBacktrack,
+  updateNodeLocation,
+  getRescueMovementLogs,
 } from './backend/self_healing.js';
 import { getRecentMessages, sendMessage } from './backend/messaging.js';
 import { addEvent, getEvents } from './backend/events.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const FRONTEND_DIR = path.join(__dirname, 'frontend');
+const FRONTEND_DIR = fs.existsSync(path.join(__dirname, 'frontend'))
+  ? path.join(__dirname, 'frontend')
+  : path.join(__dirname, '..', 'frontend');
 
 const app = express();
 const PORT = 3000;
@@ -54,6 +61,8 @@ setInterval(() => {
     active_links: health.active_links,
     connected: health.connected,
     default_route: defaultRoute,
+    backtracking: getBacktrackingRegistry(NETWORK),
+    rescue_movement_logs: getRescueMovementLogs(NETWORK),
     timestamp: new Date().toISOString(),
   });
 
@@ -243,12 +252,97 @@ app.post('/network/node/:node_id/fail', (req: Request, res: Response) => {
   try {
     validateNodeId(NETWORK, nodeId);
     const node = failNode(NETWORK, nodeId);
-    addEvent('NODE_FAILURE', `Node ${nodeId} (${node.name}) failed or knocked offline.`, nodeId, 'high');
+    const lastLoc = node.last_known_location;
+    const vector = lastLoc?.backtrack_search_vector;
+
+    addEvent(
+      'NODE_FAILURE',
+      `Node ${nodeId} (${node.name}) offline! Last saved location: ${lastLoc?.location || node.location}. Backtrack search vector initiated from Node ${vector?.nearest_active_node_id || 'SURROUNDING'} (${vector?.distance_meters ?? 0}m).`,
+      nodeId,
+      'critical'
+    );
+
     const route = findBestRoute(NETWORK, 'A', 'F', 'composite');
     res.json({
-      message: `Node ${nodeId} failed. Dijkstra recalculating alternative path.`,
+      message: `Node ${nodeId} failed. Last saved location registered for emergency backtracking.`,
       node,
+      last_known_location: lastLoc,
+      backtrack_search_vector: vector,
       route,
+    });
+  } catch (err: any) {
+    res.status(404).json({ detail: err.message });
+  }
+});
+
+// Backtracking Registry & Search Dispatch
+app.get('/network/backtracking', (_req: Request, res: Response) => {
+  res.json(getBacktrackingRegistry(NETWORK));
+});
+
+app.post('/network/node/:node_id/backtrack/dispatch', (req: Request, res: Response) => {
+  const nodeId = req.params.node_id.toUpperCase();
+  const dispatchedBy = String(req.body?.dispatched_by || 'Command Center');
+  try {
+    validateNodeId(NETWORK, nodeId);
+    const result = dispatchRescueBacktrack(NETWORK, nodeId, dispatchedBy);
+    
+    addEvent(
+      'BACKTRACK_DISPATCH',
+      `Search & Rescue dispatched to backtrack last known location of Node ${nodeId} (${result.target_node.location}). Vector: ${result.vector?.distance_meters}m bearing ${result.vector?.bearing_degrees}° from Node ${result.vector?.nearest_active_node_id}.`,
+      nodeId,
+      'high'
+    );
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(404).json({ detail: err.message });
+  }
+});
+
+app.get('/network/rescue-movement-logs', (_req: Request, res: Response) => {
+  res.json(getRescueMovementLogs(NETWORK));
+});
+
+app.post('/network/node/:node_id/location', (req: Request, res: Response) => {
+  const nodeId = req.params.node_id.toUpperCase();
+  const location = String(req.body?.location || '').trim();
+  const coordinates = req.body?.coordinates;
+  const activity = String(req.body?.activity || 'Patrol Movement').trim();
+  const note = String(req.body?.note || 'GPS telemetry position update.').trim();
+
+  if (!location) {
+    return res.status(400).json({ detail: 'Location label is required.' });
+  }
+
+  try {
+    validateNodeId(NETWORK, nodeId);
+    const node = updateNodeLocation(NETWORK, nodeId, location, coordinates, activity, note);
+    addEvent(
+      'LOCATION_UPDATE',
+      `Rescue Member ${nodeId} (${node.name}) relocated to "${location}" [${node.coordinates.lat.toFixed(4)}, ${node.coordinates.lng.toFixed(4)}]. Activity: ${activity}`,
+      nodeId,
+      'low'
+    );
+    res.json({ message: `Location and movement log updated for Node ${nodeId}.`, node });
+  } catch (err: any) {
+    res.status(404).json({ detail: err.message });
+  }
+});
+
+app.get('/network/node/:node_id/breadcrumbs', (req: Request, res: Response) => {
+  const nodeId = req.params.node_id.toUpperCase();
+  try {
+    validateNodeId(NETWORK, nodeId);
+    const node = NETWORK.nodes.get(nodeId)!;
+    res.json({
+      node_id: nodeId,
+      name: node.name,
+      status: node.status,
+      current_location: node.location,
+      coordinates: node.coordinates,
+      last_known_location: node.last_known_location,
+      breadcrumbs: node.location_history || [],
     });
   } catch (err: any) {
     res.status(404).json({ detail: err.message });
@@ -345,14 +439,14 @@ app.post('/messages/send', (req: Request, res: Response) => {
     if (record.delivery_status === 'delivered') {
       addEvent(
         'MESSAGE_SENT',
-        `[${priority}] SOS dispatched from ${sender} to ${destination} via [${record.route.join(' -> ')}]. Delay: ${record.total_latency_ms}ms`,
+        `[${priority}] Radio transmission from ${NETWORK.nodes.get(sender)?.name || sender} to ${NETWORK.nodes.get(destination)?.name || destination} via [${record.route.join(' -> ')}]. Latency: ${record.total_latency_ms}ms`,
         sender,
         priority === 'CRITICAL' ? 'critical' : 'high'
       );
     } else {
       addEvent(
         'MESSAGE_FAILED',
-        `[${priority}] Delivery failed from ${sender} to ${destination}: ${routeResult.reason}`,
+        `[${priority}] Squad transmission failed from ${NETWORK.nodes.get(sender)?.name || sender} to ${NETWORK.nodes.get(destination)?.name || destination}: ${routeResult.reason}`,
         sender,
         'critical'
       );
