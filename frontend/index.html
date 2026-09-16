@@ -3,120 +3,488 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Disaster-Resilient Emergency Network</title>
+    <title>Disaster-Resilient Emergency Communication Network</title>
+    <meta name="description" content="A self-healing emergency communication mesh network utilizing Dijkstra's algorithm for shortest-path routing, real-time node health monitoring, and disaster failover recovery." />
+    <meta property="og:title" content="Disaster-Resilient Emergency Communication Network" />
+    <meta property="og:description" content="A self-healing emergency communication mesh network utilizing Dijkstra's algorithm for shortest-path routing, real-time node health monitoring, and disaster failover recovery." />
     <link rel="stylesheet" href="style.css" />
+    <!-- Vis.js for Network Topology Visualization -->
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div>
-          <div class="title">DISASTER-RESILIENT EMERGENCY COMMUNICATION NETWORK</div>
-          <div class="status-row">
-            <span class="live-dot"></span>
-            <span>LIVE</span>
-            <span class="status-label">Network Status</span>
+    <div class="app-container">
+      <!-- TOP COMMAND BAR -->
+      <header class="command-bar" id="commandHeader">
+        <div class="brand-group">
+          <div class="badge-alert">TACTICAL MESH v2.4</div>
+          <div class="title-wrap">
+            <h1 class="main-title">DISASTER-RESILIENT EMERGENCY MESH NETWORK</h1>
+            <p class="subtitle">Autonomous Ad-Hoc Topology • Dijkstra Shortest Route • Dynamic Self-Healing</p>
           </div>
         </div>
-        <div class="connection-pill" id="connectionPill">
-          <span class="connection-dot"></span>
-          <span>Connecting...</span>
+
+        <div class="header-actions">
+          <button id="projectFlowBtn" class="pill-btn flow-btn" title="View Hackathon Architecture & Flow">
+            <span class="btn-icon">📋</span> PROJECT FLOW & SPECS
+          </button>
+          <button id="demoScenarioBtn" class="pill-btn demo-btn" title="Run Automated Disaster & Self-Healing Walkthrough">
+            <span class="btn-icon">⚡</span> RUN HACKATHON DEMO
+          </button>
+          <div class="conn-indicator" id="connectionPill">
+            <span class="pulse-dot"></span>
+            <span id="connectionText">SYNCHRONIZING</span>
+          </div>
         </div>
       </header>
 
-      <main class="dashboard">
-        <section class="primary-panel card">
-          <div class="panel-header">
-            <h2>Mesh Topology</h2>
-            <button id="demoBtn" class="secondary-btn">DEMO MODE</button>
+      <!-- METRICS HUD RIBBON -->
+      <section class="metrics-ribbon" id="metricsHud">
+        <div class="hud-item" id="hudHealth">
+          <div class="hud-label">NETWORK HEALTH</div>
+          <div class="hud-val health-good" id="healthScore">100%</div>
+          <div class="hud-bar-track">
+            <div class="hud-bar-fill" id="healthBarFill" style="width: 100%;"></div>
           </div>
-          <div id="networkMap" class="network-map"></div>
-        </section>
+        </div>
+        <div class="hud-item" id="hudActiveNodes">
+          <div class="hud-label">ONLINE NODES</div>
+          <div class="hud-val" id="aliveCount">6 / 6</div>
+          <div class="hud-sub">Rescue Units Operational</div>
+        </div>
+        <div class="hud-item" id="hudDegradedNodes">
+          <div class="hud-label">DEGRADED UNITS</div>
+          <div class="hud-val text-amber" id="degradedCount">0</div>
+          <div class="hud-sub">Low Battery or RF Interference</div>
+        </div>
+        <div class="hud-item" id="hudOfflineNodes">
+          <div class="hud-label">OFFLINE / SEVERED</div>
+          <div class="hud-val text-red" id="downCount">0</div>
+          <div class="hud-sub">Isolated or Submerged</div>
+        </div>
+        <div class="hud-item" id="hudActiveLinks">
+          <div class="hud-label">ACTIVE RF LINKS</div>
+          <div class="hud-val text-cyan" id="activeLinks">7 / 7</div>
+          <div class="hud-sub" id="connectedStatus">Mesh Partition: NONE</div>
+        </div>
+        <div class="hud-item" id="hudDijkstraCost">
+          <div class="hud-label">DIJKSTRA LATENCY (A→F)</div>
+          <div class="hud-val text-emerald" id="hudRouteLatency">53 ms</div>
+          <div class="hud-sub" id="hudHopCount">3 Hops via Air Drone</div>
+        </div>
+      </section>
 
-        <aside class="side-panel">
-          <div class="card health-card">
-            <h3>Network Health</h3>
-            <div class="health-score" id="healthScore">100%</div>
-            <div class="stat-grid">
-              <div><span>Alive Nodes</span><strong id="aliveCount">0</strong></div>
-              <div><span>Degraded</span><strong id="degradedCount">0</strong></div>
-              <div><span>Down</span><strong id="downCount">0</strong></div>
-              <div><span>Active Links</span><strong id="activeLinks">0</strong></div>
-              <div><span>Connected</span><strong id="connectedStatus">YES</strong></div>
+      <!-- MAIN INTERACTIVE WORKSPACE -->
+      <main class="main-layout">
+        <!-- LEFT / TOP: TOPOLOGY CANVAS & ROUTE INSPECTOR -->
+        <section class="canvas-section card-neo">
+          <div class="panel-header">
+            <div class="header-left">
+              <span class="status-tag">REAL-TIME TOPOLOGY</span>
+              <h2>Autonomous Mesh Visualizer</h2>
+            </div>
+            <div class="canvas-controls">
+              <span class="legend-chip"><span class="chip-dot alive"></span> Alive</span>
+              <span class="legend-chip"><span class="chip-dot degraded"></span> Degraded</span>
+              <span class="legend-chip"><span class="chip-dot down"></span> Down</span>
+              <span class="legend-chip"><span class="chip-line active"></span> Active Path</span>
+              <button id="recenterBtn" class="neo-btn-sm" title="Re-center view">Recenter</button>
+              <button id="resetNetBtn" class="neo-btn-sm danger" title="Reset to initial topology">Reset Mesh</button>
             </div>
           </div>
 
-          <div class="card controls-card">
-            <h3>Emergency Controls</h3>
-            <div class="controls-wrap">
-              <label for="nodeSelect">Node</label>
-              <select id="nodeSelect">
-                <option value="A">A</option>
-                <option value="B">B</option>
-                <option value="C">C</option>
-                <option value="D">D</option>
-                <option value="E">E</option>
-                <option value="F">F</option>
-              </select>
-              <button id="failNodeBtn" class="primary-btn">Simulate Node Failure</button>
-              <button id="restoreNodeBtn" class="secondary-btn">Restore Node</button>
-              <button id="sendMessageBtn" class="primary-btn">Send Emergency Message</button>
-              <button id="failLinkBtn" class="secondary-btn">Simulate Link Failure</button>
-              <button id="resetNetBtn" class="ghost-btn">Reset Network</button>
+          <!-- VIS.JS TOPOLOGY CONTAINER -->
+          <div class="map-wrapper">
+            <div id="networkMap" class="network-map"></div>
+            
+            <!-- FLOATING ROUTE OVERLAY BADGE -->
+            <div class="route-badge-overlay" id="routeOverlay">
+              <div class="overlay-title">DIJKSTRA ACTIVE SHORTEST PATH</div>
+              <div class="overlay-path" id="overlayPathDisplay">A ➔ C ➔ E ➔ F</div>
+              <div class="overlay-meta" id="overlayMetaDisplay">Latency: 53ms | Hops: 3 | Cost: 53.0</div>
+            </div>
+
+            <!-- FLOATING SELECTION CARD -->
+            <div class="node-inspector-popup hidden" id="nodeInspector">
+              <div class="inspector-header">
+                <span class="inspector-id" id="inspNodeId">NODE A</span>
+                <button class="close-btn" id="closeInspectorBtn">✕</button>
+              </div>
+              <div class="inspector-body" id="inspBody">
+                <div><strong>Role:</strong> <span id="inspRole">Rescue Unit</span></div>
+                <div><strong>Status:</strong> <span id="inspStatus">ALIVE</span></div>
+                <div><strong>Battery:</strong> <span id="inspBattery">92%</span></div>
+                <div><strong>Signal:</strong> <span id="inspSignal">94%</span></div>
+                <div><strong>Location:</strong> <span id="inspLocation">Zone A</span></div>
+              </div>
+              <div class="inspector-actions">
+                <button class="neo-btn-sm danger" id="inspFailBtn">Fail Node</button>
+                <button class="neo-btn-sm warning" id="inspDegradeBtn">Degrade</button>
+                <button class="neo-btn-sm success" id="inspRestoreBtn">Restore</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- DIJKSTRA ALGORITHM LIVE ANALYSIS STRIP -->
+          <div class="dijkstra-strip">
+            <div class="dijkstra-strip-header">
+              <div class="strip-title">
+                <span class="badge-algo">DIJKSTRA ALGORITHM ENGINE</span>
+                <h3>Shortest Route Computation & Relaxation Table</h3>
+              </div>
+              <div class="metric-selector-wrap">
+                <label for="routingMetricSelect">Weight Metric:</label>
+                <select id="routingMetricSelect" class="neo-select">
+                  <option value="composite">Resilient Composite (Latency + Signal Quality)</option>
+                  <option value="latency">Pure Latency (Fastest ms)</option>
+                  <option value="hops">Shortest Hop Count (Min Relays)</option>
+                </select>
+                <button id="recalculateRouteBtn" class="neo-btn-sm primary">Recalculate</button>
+              </div>
+            </div>
+
+            <!-- PATH COMPARISON & BREAKDOWN -->
+            <div class="route-hops-grid" id="routeHopsGrid">
+              <!-- Dynamically populated with step cards -->
+            </div>
+
+            <!-- DIJKSTRA STEPS COLLAPSIBLE -->
+            <details class="dijkstra-details" id="dijkstraTraceDetails">
+              <summary class="dijkstra-summary">
+                <span>View Dijkstra Step-by-Step Distance Vector & Node Relaxation Trace</span>
+                <span class="toggle-icon">▼</span>
+              </summary>
+              <div class="dijkstra-trace-content" id="dijkstraTraceLog">
+                <!-- Trace table rendered via JS -->
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <!-- RIGHT: EMERGENCY CONTROLS & DISASTER SIMULATOR -->
+        <aside class="sidebar-section">
+          <!-- DISASTER INJECTION SCENARIOS -->
+          <div class="card-neo disaster-card">
+            <div class="card-header-neo">
+              <span class="status-tag red">DISASTER SIMULATION</span>
+              <h3>Emergency Stress Tests</h3>
+            </div>
+            <p class="section-desc">Trigger real-world disaster events to test instant mesh self-healing and Dijkstra rerouting:</p>
+            <div class="disaster-btn-grid">
+              <button class="disaster-btn" data-scenario="flood" id="btnDisasterFlood">
+                <span class="icon">🌊</span>
+                <span class="btn-text">
+                  <strong>Flash Flood</strong>
+                  <small>Submerge Zone C Drone Relay</small>
+                </span>
+              </button>
+              <button class="disaster-btn" data-scenario="earthquake" id="btnDisasterEarthquake">
+                <span class="icon">🌋</span>
+                <span class="btn-text">
+                  <strong>Earthquake (M7.1)</strong>
+                  <small>Sever Link B-D & Degrade Ambulance</small>
+                </span>
+              </button>
+              <button class="disaster-btn" data-scenario="cyclone" id="btnDisasterCyclone">
+                <span class="icon">🌪️</span>
+                <span class="btn-text">
+                  <strong>Cyclone Storm</strong>
+                  <small>Spike RF Latency & Noise (A-C)</small>
+                </span>
+              </button>
+              <button class="disaster-btn" data-scenario="emp" id="btnDisasterEmp">
+                <span class="icon">⚡</span>
+                <span class="btn-text">
+                  <strong>Grid Power Failure</strong>
+                  <small>Sever Command Relay Link D-F</small>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- NODE & LINK MANUAL FAULT INJECTION -->
+          <div class="card-neo control-matrix-card">
+            <div class="card-header-neo">
+              <span class="status-tag blue">FAULT INJECTION</span>
+              <h3>Manual Topology Control</h3>
+            </div>
+
+            <!-- Node Controls -->
+            <div class="control-subgroup">
+              <label class="group-label">Select Node:</label>
+              <div class="control-row">
+                <select id="nodeSelect" class="neo-select">
+                  <option value="A">Node A - Rescue Team 1</option>
+                  <option value="B">Node B - Ambulance Unit</option>
+                  <option value="C">Node C - Drone Air Relay</option>
+                  <option value="D">Node D - Rescue Team 2</option>
+                  <option value="E">Node E - Relief Camp</option>
+                  <option value="F">Node F - Command Center</option>
+                </select>
+              </div>
+              <div class="btn-triple-grid">
+                <button id="failNodeBtn" class="neo-btn danger">Kill Node</button>
+                <button id="degradeNodeBtn" class="neo-btn warning">Degrade</button>
+                <button id="restoreNodeBtn" class="neo-btn success">Restore</button>
+              </div>
+            </div>
+
+            <!-- Link Controls -->
+            <div class="control-subgroup">
+              <label class="group-label">Select Physical RF Link:</label>
+              <div class="control-row">
+                <select id="linkSelect" class="neo-select">
+                  <option value="A-B">Link A ↔ B (20ms, 90% Signal)</option>
+                  <option value="A-C">Link A ↔ C (22ms, 88% Signal)</option>
+                  <option value="B-D">Link B ↔ D (18ms, 92% Signal)</option>
+                  <option value="C-E">Link C ↔ E (16ms, 94% Signal)</option>
+                  <option value="D-E">Link D ↔ E (12ms, 96% Signal)</option>
+                  <option value="D-F">Link D ↔ F (20ms, 91% Signal)</option>
+                  <option value="E-F">Link E ↔ F (15ms, 98% Signal)</option>
+                </select>
+              </div>
+              <div class="btn-dual-grid">
+                <button id="toggleLinkBtn" class="neo-btn warning">Cut / Sever Link</button>
+                <button id="restoreLinkBtn" class="neo-btn success">Restore Link</button>
+              </div>
             </div>
           </div>
         </aside>
       </main>
 
-      <section class="lower-grid">
-        <div class="card message-panel">
-          <h3>Emergency Message</h3>
-          <form id="messageForm" class="message-form">
-            <div class="field-row">
-              <label>Sender
-                <select id="senderSelect">
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                  <option value="D">D</option>
-                  <option value="E">E</option>
-                  <option value="F">F</option>
-                </select>
-              </label>
-              <label>Destination
-                <select id="destinationSelect">
-                  <option value="F">F</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                  <option value="D">D</option>
-                  <option value="E">E</option>
-                </select>
-              </label>
-              <label>Priority
-                <select id="prioritySelect">
-                  <option value="CRITICAL">CRITICAL</option>
-                  <option value="HIGH">HIGH</option>
-                  <option value="NORMAL">NORMAL</option>
-                  <option value="LOW">LOW</option>
-                </select>
-              </label>
+      <!-- LOWER DASHBOARD GRID: DISPATCH TERMINAL & EVENT LOGS -->
+      <section class="lower-section">
+        <!-- EMERGENCY MESSAGE DISPATCH PANEL -->
+        <div class="card-neo dispatch-card">
+          <div class="card-header-neo">
+            <div class="header-left">
+              <span class="status-tag emerald">TACTICAL DISPATCH</span>
+              <h3>Emergency Communication Terminal</h3>
             </div>
-            <label>Message
-              <textarea id="messageInput" rows="3">SOS - Rescue team requires immediate assistance</textarea>
-            </label>
-            <button type="submit" class="primary-btn">Dispatch</button>
+            <span class="priority-pill critical" id="activePriorityBadge">CRITICAL PRIORITY</span>
+          </div>
+
+          <form id="messageForm" class="dispatch-form">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="senderSelect">Originating Node (Sender)</label>
+                <select id="senderSelect" class="neo-select">
+                  <option value="A" selected>Node A - Rescue Team 1</option>
+                  <option value="B">Node B - Ambulance Unit</option>
+                  <option value="C">Node C - Drone Relay</option>
+                  <option value="D">Node D - Rescue Team 2</option>
+                  <option value="E">Node E - Relief Camp</option>
+                  <option value="F">Node F - Command Center</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="destinationSelect">Target Destination Node</label>
+                <select id="destinationSelect" class="neo-select">
+                  <option value="F" selected>Node F - Command Center</option>
+                  <option value="E">Node E - Relief Camp</option>
+                  <option value="D">Node D - Rescue Team 2</option>
+                  <option value="C">Node C - Drone Relay</option>
+                  <option value="B">Node B - Ambulance Unit</option>
+                  <option value="A">Node A - Rescue Team 1</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="prioritySelect">Emergency Priority Level</label>
+                <select id="prioritySelect" class="neo-select">
+                  <option value="CRITICAL" selected>🚨 CRITICAL (Life-Safety SOS)</option>
+                  <option value="HIGH">⚠️ HIGH (Urgent Supplies / Evac)</option>
+                  <option value="NORMAL">ℹ️ NORMAL (Telemetry / Status Check)</option>
+                  <option value="LOW">📡 LOW (Routine Sync)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Quick SOS Presets -->
+            <div class="preset-chips">
+              <span class="preset-label">Quick Presets:</span>
+              <button type="button" class="preset-chip" data-msg="SOS - Structural collapse at Sector 4. Immediate extraction team required.">Building Collapse</button>
+              <button type="button" class="preset-chip" data-msg="CRITICAL - Medical trauma patient in shock; dispatch urgent air ambulance.">Medical Trauma</button>
+              <button type="button" class="preset-chip" data-msg="SURVEY - Aerial drone confirmed 12 stranded civilians on high ground.">Survivor Cluster</button>
+              <button type="button" class="preset-chip" data-msg="STATUS - Clean water and satellite power battery depleted to 18%.">Supply Shortage</button>
+            </div>
+
+            <div class="form-group">
+              <label for="messageInput">Emergency Packet Payload</label>
+              <textarea id="messageInput" rows="2" class="neo-textarea" placeholder="Enter emergency message payload...">SOS - Flash flood surge detected at Sector A bridge. Rescue team requires immediate evacuation support.</textarea>
+            </div>
+
+            <div class="dispatch-footer">
+              <div class="dispatch-result-box" id="messageResult">
+                <span class="ready-text">⚡ Terminal online. Ready to route packet via Dijkstra algorithm.</span>
+              </div>
+              <button type="submit" id="dispatchBtn" class="neo-btn-large dispatch-btn">
+                <span class="btn-icon">📡</span> DISPATCH EMERGENCY PACKET
+              </button>
+            </div>
           </form>
-          <div id="messageResult" class="message-result"></div>
+
+          <!-- DISPATCHED PACKET LEDGER -->
+          <div class="packet-ledger">
+            <div class="ledger-header">
+              <h4>Recent Transmission History</h4>
+              <span class="ledger-count" id="ledgerCount">0 Dispatched</span>
+            </div>
+            <div class="ledger-list" id="ledgerList">
+              <!-- Dynamically rendered -->
+            </div>
+          </div>
         </div>
 
-        <div class="card log-panel">
-          <h3>Event Log</h3>
-          <ul id="eventLog" class="event-log"></ul>
+        <!-- REAL-TIME EVENT TELEMETRY & LOG -->
+        <div class="card-neo telemetry-card">
+          <div class="card-header-neo">
+            <div class="header-left">
+              <span class="status-tag purple">AUDIT LOG</span>
+              <h3>Network Telemetry & Failover Log</h3>
+            </div>
+            <button id="clearLogsBtn" class="neo-btn-sm" title="Clear visual logs">Clear</button>
+          </div>
+
+          <div class="log-filter-row">
+            <span class="filter-label">Filter:</span>
+            <button class="filter-tag active" data-filter="all">All Events</button>
+            <button class="filter-tag" data-filter="critical">Disaster & Critical</button>
+            <button class="filter-tag" data-filter="routing">Dijkstra Rerouting</button>
+          </div>
+
+          <ul id="eventLog" class="event-log-container">
+            <!-- Dynamically populated -->
+          </ul>
         </div>
       </section>
+
+      <!-- PROJECT FLOW & ARCHITECTURE MODAL -->
+      <div class="modal-backdrop hidden" id="projectFlowModal">
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <span class="badge-alert">HACKATHON ARCHITECTURE & SPECIFICATION</span>
+              <h2>Disaster-Resilient Emergency Network — Project Flow</h2>
+            </div>
+            <button class="close-modal-btn" id="closeFlowModalBtn">✕</button>
+          </div>
+
+          <div class="modal-content">
+            <!-- 1. PROBLEM & OBJECTIVE -->
+            <div class="flow-block">
+              <div class="block-num">01</div>
+              <div class="block-body">
+                <h3>Problem Statement & Core Hackathon Objectives</h3>
+                <p>
+                  In major disasters (earthquakes, cyclones, floods), central cellular towers and terrestrial fiber grids are knocked out within the first minutes.
+                  First responders are left blind and isolated.
+                </p>
+                <div class="spec-grid">
+                  <div class="spec-box">
+                    <strong>Autonomous Mesh Topology</strong>
+                    <span>Deployable ad-hoc nodes (Rescue squads, ambulances, air drones, command HQ) that discover and route through each other without Internet.</span>
+                  </div>
+                  <div class="spec-box">
+                    <strong>Dynamic Self-Healing</strong>
+                    <span>When an intermediate node is destroyed or link severed, the network dynamically detects the topology change and self-repairs in &lt;10ms.</span>
+                  </div>
+                  <div class="spec-box">
+                    <strong>Dijkstra Shortest Route</strong>
+                    <span>Computes optimal hop-by-hop forwarding using latency, link signal strength, and remaining battery reserves as cost metrics.</span>
+                  </div>
+                  <div class="spec-box">
+                    <strong>Priority Dispatch Engine</strong>
+                    <span>Critical life-saving SOS packets are guaranteed delivery with route tracing and verification.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. END-TO-END PROJECT FLOW -->
+            <div class="flow-block">
+              <div class="block-num">02</div>
+              <div class="block-body">
+                <h3>End-to-End System Execution Flow</h3>
+                <div class="step-sequence">
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 1</span>
+                    <h4>Node Deployment & Discovery</h4>
+                    <p>Field units (A, B, C, D, E, F) broadcast beacon frames over ISM RF band (LoRa/Wi-Fi ad-hoc). Each node establishes neighbor links and measures ping latency & RSSI.</p>
+                  </div>
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 2</span>
+                    <h4>Graph Weight Construction</h4>
+                    <p>Adjacency matrix weights $W(u, v)$ are populated using composite metrics: physical latency + signal degradation penalty + battery deficiency penalty.</p>
+                  </div>
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 3</span>
+                    <h4>Dijkstra Shortest Path Execution</h4>
+                    <p>When an emergency message is dispatched from Node A to Command F, Dijkstra's algorithm relaxes edges to identify the lowest cost multi-hop path.</p>
+                  </div>
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 4</span>
+                    <h4>Fault Detection & Self-Healing Loop</h4>
+                    <p>If an intermediate node goes offline, neighbor heartbeats fail. The node is marked down, its edges pruned, and Dijkstra instantly reroutes over healthy secondary relays.</p>
+                  </div>
+                  <div class="flow-step">
+                    <span class="step-badge">Phase 5</span>
+                    <h4>Operator Command Telemetry</h4>
+                    <p>Web dashboard receives sub-second topology snapshots via WebSockets, allowing central commanders to inspect link health and dispatch life-safety aid.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. DIJKSTRA MATHEMATICAL FORMULATION -->
+            <div class="flow-block">
+              <div class="block-num">03</div>
+              <div class="block-body">
+                <h3>Dijkstra Algorithm Mathematical Formulation</h3>
+                <div class="formula-box">
+                  <code>Cost(u, v) = Latency_{uv} + \alpha \cdot (100 - Signal_{uv}) + \beta \cdot (100 - Battery_v) + P_{degraded}</code>
+                </div>
+                <p>
+                  Unlike naive shortest-path algorithms that only count hop counts, this disaster-resilient metric penalizes links with poor signal-to-noise ratios or dying battery reserves, ensuring critical SOS packets are never dropped mid-route.
+                </p>
+              </div>
+            </div>
+
+            <!-- 4. HARDWARE IMPLEMENTATION ROADMAP -->
+            <div class="flow-block">
+              <div class="block-num">04</div>
+              <div class="block-body">
+                <h3>Physical Deployment & Hardware Stack</h3>
+                <div class="spec-grid">
+                  <div class="spec-box">
+                    <strong>Microcontroller Relays</strong>
+                    <span>ESP32-S3 with SX1262 LoRa transceivers (868MHz / 915MHz) operating up to 15km line-of-sight.</span>
+                  </div>
+                  <div class="spec-box">
+                    <strong>Autonomous Aerial Relay</strong>
+                    <span>Tethered or roaming DJI/Pixhawk drone (Node C) carrying an RF mesh relay to bridge mountainous or flooded terrain.</span>
+                  </div>
+                  <div class="spec-box">
+                    <strong>Field Power System</strong>
+                    <span>18650 LiFePO4 battery pack with 20W fold-out solar charging panels for indefinite off-grid deployment.</span>
+                  </div>
+                  <div class="spec-box">
+                    <strong>First Responder UI</strong>
+                    <span>Progressive Web App (PWA) running locally on responder rugged tablets connecting to local node Wi-Fi AP.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="neo-btn-large primary" id="closeFlowModalFooterBtn">Return to Command Dashboard</button>
+          </div>
+        </div>
+      </div>
     </div>
 
+    <!-- MAIN CLIENT ENGINE JAVASCRIPT -->
     <script src="app.js"></script>
   </body>
 </html>

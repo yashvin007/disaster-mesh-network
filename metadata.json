@@ -1,0 +1,8 @@
+{
+  "name": "Disaster-Resilient Emergency Communication Network",
+  "description": "A self-healing emergency communication mesh network simulating route-aware disaster messaging, node and link failure recovery, and real-time topology health monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
